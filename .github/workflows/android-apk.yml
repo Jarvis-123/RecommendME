@@ -1,0 +1,64 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: "App URL (Vercel deploy URL or http://LAN_IP:3000)"
+        required: true
+        default: "https://your-app.vercel.app"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare Android project
+        run: |
+          if [ ! -f android/gradlew ]; then npx cap add android; fi
+          node scripts/patch-android.js
+
+      - name: Sync Capacitor
+        env:
+          CAPACITOR_SERVER_URL: ${{ github.event.inputs.server_url }}
+        run: |
+          npx cap sync android
+          node scripts/patch-android.js
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RecommendME-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      - name: Summary
+        run: |
+          echo "### APK built successfully" >> $GITHUB_STEP_SUMMARY
+          echo "Download from **Artifacts** on this workflow run." >> $GITHUB_STEP_SUMMARY
+          echo "Server URL baked in: ${{ github.event.inputs.server_url }}" >> $GITHUB_STEP_SUMMARY
